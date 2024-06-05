@@ -1,0 +1,18 @@
+name: shiny
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - shiny=0.10.2
+  - python=3.11.0
+  - plotly=5.22.0
+  - pandas=2.2.2
+  - pip=24.0
+  - numpy=1.26.4
+  - scipy=1.13.0
+  - pip: 
+    - faicons==0.2.2
+    - shinylive==0.4.1
+    - shinywidgets==0.3.2
+    - ridgeplot==0.1.25
+
