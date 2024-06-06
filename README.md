@@ -20,4 +20,9 @@ conda activate shiny
 ```
 
 
+Export to satic site deployment
+
+```
+shinylive export . site             
+```
 

@@ -49,7 +49,16 @@ ui.HTML("<em><span>Calculations made based on the pricing information retrieved 
 ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable=True, window_title="GeDaC S3 Cost Study", lang="en")
 
 with ui.sidebar(open="desktop", width=500, fill=True):
-
+    ui.input_radio_buttons(
+        "s_class",
+        "Storage Class",
+                {
+            "Standard Storage": ui.span("Standard Storage"),
+            "Deep Archive": ui.span("Deep Archive"),
+        },
+        selected=storage_class,
+        inline=True,
+    )
     ui.input_radio_buttons(
         "mode",
         "Calculation Mode",
@@ -61,22 +70,11 @@ with ui.sidebar(open="desktop", width=500, fill=True):
         inline=True,
     )
 
-    ui.HTML("<hr>")
+    # ui.HTML("<hr>")
 
     with ui.panel_conditional("input.mode === 'Simple'"):
-        ui.input_radio_buttons(
-            "s_class",
-            "Storage Class",
-                    {
-                "Standard Storage": ui.span("Standard Storage"),
-                "Deep Archive": ui.span("Deep Archive"),
-            },
-            selected=storage_class,
-            inline=True,
-        )
-
-        with ui.accordion(id="simple_mode", multiple=True, open=True):
-            with ui.accordion_panel(f"Storage Inputs", icon=ICONS["file"]):
+        with ui.accordion(id="simple_mode", multiple=True, open=True, ):
+            with ui.accordion_panel(f"Storage Inputs", icon=ICONS["file"], style="background-color: #F8F8F8;"):
                 ui.input_numeric("s_samples", "No of Samples/Files:", 0, min=1, max=100000),
                 ui.input_numeric("s_size", "Total Storage Size (TB):", 0, min=1, max=1000),
                 ui.input_slider(
@@ -90,37 +88,28 @@ with ui.sidebar(open="desktop", width=500, fill=True):
                     step=1,
                     drag_range=False,
                 )
+                ui.HTML("<br/>")
 
-            with ui.accordion_panel(f"Data-Transfer Inputs", icon=ICONS["transfer"]):
+            with ui.accordion_panel(f"Data-Transfer Inputs", icon=ICONS["transfer"], style="background-color: #F8F8F8;"):
                 ui.input_numeric("s_download", "Download Size (TB):", 0, min=0, max=1000),
                 ui.input_numeric("s_download_times", "Download Times:", 0, min=0, max=100, step=1),
                 ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
 
     with ui.panel_conditional("input.mode === 'Advanced'"):
-
+        ui.input_numeric("a_samples", "No of Samples/Files per Month:", 0, min=1, max=100000),
+        ui.input_numeric("a_size", "Average Sample Size:", 0, min=1, max=1000),
         ui.input_slider(
             "a_duration",
-            "Timeline (years)",
+            "Storage Duration (Months)",
             0,
-            max=total_months,
+            max=120,
             value=total_months,
             post=" ",
             animate= False,
             step=1,
             drag_range=False,
-            
         )
-
-        ui.input_radio_buttons(
-            "a_class",
-            "Storage Class",
-                    {
-                "Standard Storage": ui.span("Standard Storage"),
-                "Deep Archive": ui.span("Deep Archive"),
-            },
-            selected=["Standard Storage"],
-            inline=False,
-        )
+        ui.HTML("<br/>")
 
     ui.input_action_button("reset", "Reset filter")
 
@@ -174,15 +163,16 @@ with ui.layout_columns(col_widths={"sm": (12, 12), "md": (4,8), "lg": (5,7)}, fi
         return pie_chart(calculate_info()["storage_cost"], calculate_info()["download_cost"])
     
     @render_plotly
-    def bar_chart_accumulation():
-        storage_cost_distribution = calculate_info()["storage_cost_distribution"]
-        return bar_chart_accumulation(storage_cost_distribution)    
-    
-with ui.layout_columns(col_widths={12}, fill=False, height="300px"):
-    @render_plotly
     def bar_chart_distribution():
         storage_cost_distribution = calculate_info()["storage_cost_distribution"]
         return bar_chart_distribution(storage_cost_distribution)   
+    
+    
+with ui.layout_columns(col_widths={12}, fill=False, height="300px"):
+    @render_plotly
+    def bar_chart_accumulation():
+        storage_cost_distribution = calculate_info()["storage_cost_distribution"]
+        return bar_chart_accumulation(storage_cost_distribution)    
 
 ui.include_css(app_dir / "styles.css")
 
@@ -311,33 +301,38 @@ def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj
         cost_breakdown.append(f"Total Data Transfer Cost: (${requests_cost} + ${transfer_cost} + ${retrival_cost}) x {times} Time(s) = ${total_cost}")
     return total_cost if total_cost and total_cost > 0 else 0
 
-
 def pie_chart(storage_cost, download_cost):
     fig = px.pie(
         values=[storage_cost, download_cost],
         names=["Storage Cost", "Download Cost"],
-        color_discrete_sequence=["#E567CB", "#6070FA"],
         title="Cost Distribution",
+        labels={'Storage Cost':'Storage Cost (USD)', 'Download Cost':'Download Cost (USD)'}
     )
-    return fig
-
-def bar_chart_accumulation(data_array):
-    # create new  array to store the accumulated cost
-    data_array_new = data_array.copy()
-
-    for i in range(1, len(data_array_new)):
-        data_array_new[i]["Cost"] += data_array_new[i-1]["Cost"]
-    
-    fig = px.bar(data_array_new, x="Month", y="Cost", title="Accumulated Cost over Month")
-    fig.for_each_trace(lambda trace: trace.update(name = trace.name.replace('Cost','Storage Cost (USD)')))
+    fig.update_traces(hoverinfo='label', textinfo='value', textfont_size=20,
+                  marker=dict(colors=["#E567CB", "#6070FA"], line=dict(color='#000000', width=1)))
     return fig
 
 def bar_chart_distribution(data_array):
     data_array_copy = data_array.copy()
-    fig = px.bar(data_array_copy, x="Month", y="Cost", title="Storage Cost Distribution by Month")
-    # fig.update_traces(marker_color='#E567CB')
-    fig.for_each_trace(lambda trace: trace.update(name = trace.name.replace('Cost','Storage Cost (USD)')))
+
+    fig = px.bar(data_array_copy, x="Month", y="Cost", title="Storage Cost Distribution by Month",
+                 hover_data=['Month', 'Cost'],
+             labels={'Cost':'Storage Cost (USD)', 'Month':'Months'})
     return fig
+    
+def bar_chart_accumulation(data_array):
+    # manually copy to another array
+    data_array_copy = data_array.copy()
+
+    for i in range(1, len(data_array_copy)):
+        data_array_copy[i]["Cost"] += data_array_copy[i-1]["Cost"]
+
+    fig = px.bar(data_array_copy, x="Month", y="Cost", title="Accumulated Cost over Month",
+                                  hover_data=['Month', 'Cost'],
+             labels={'Cost':'Storage Cost (USD)', 'Month':'Months'})
+    return fig
+
+
 
 @reactive.effect
 @reactive.event(input.reset)
