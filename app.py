@@ -9,7 +9,8 @@ from shared import app_dir
 from shiny import reactive, render
 from shiny.express import input, ui
 from shinywidgets import render_plotly
-
+import pandas as pd
+from htmltools import TagList, div
 
 # Add main content
 ICONS = {
@@ -35,7 +36,9 @@ gb_in_tb = 1024
 # always consider the highest tier, ideally cost reduces as storage increases
 # pricing is in USD
 standard_storage_cost_gb = 0.025 
+data_transfer_out_cost = 0.09
 put_post_copy_list_request_cost = 0.000005
+get_select_1000_request_cost = 0.0004
 get_select_request_cost = 0.0000004
 deep_archive_storage_cost_gb = 0.0099
 deep_archive_retrieval_cost_gb = 0.02
@@ -43,7 +46,7 @@ deep_archive_request_cost = 0.0000025
 
 # Add page title and sidebar
 ui.HTML("<em><span>Calculations made based on the pricing information retrieved from AWS (Singapore) as of June 05, 2024.</span></em>")
-ui.page_opts(title=ui.HTML("<span style='font-size: 30px; color: #5C6490;'> S3 Cost Study<span>"), fillable=True, window_title="GeDaC S3 Cost Study", lang="en")
+ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable=True, window_title="GeDaC S3 Cost Study", lang="en")
 
 with ui.sidebar(open="desktop", width=500, fill=True):
 
@@ -72,27 +75,26 @@ with ui.sidebar(open="desktop", width=500, fill=True):
             inline=True,
         )
 
-        ui.input_numeric("s_samples", "No of Samples/Files:", 0, min=1, max=100000),
+        with ui.accordion(id="simple_mode", multiple=True, open=True):
+            with ui.accordion_panel(f"Storage Inputs", icon=ICONS["file"]):
+                ui.input_numeric("s_samples", "No of Samples/Files:", 0, min=1, max=100000),
+                ui.input_numeric("s_size", "Total Storage Size (TB):", 0, min=1, max=1000),
+                ui.input_slider(
+                    "s_duration",
+                    "Storage Duration (Months)",
+                    0,
+                    max=120,
+                    value=total_months,
+                    post=" ",
+                    animate= False,
+                    step=1,
+                    drag_range=False,
+                )
 
-        ui.input_numeric("s_size", "Total Storage Size (TB):", 0, min=1, max=1000),
-
-        ui.input_slider(
-            "s_duration",
-            "Storage Duration (Months)",
-            0,
-            max=120,
-            value=total_months,
-            post=" ",
-            animate= False,
-            step=1,
-            drag_range=False,
-        )
-
-        ui.input_numeric("s_download", "Download Size per year (TB):", 0, min=0, max=1000)
-
-        ui.input_numeric("s_download_times", "Download Times (per year):", 0, min=0, max=100, step=1)
-
-        ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
+            with ui.accordion_panel(f"Data-Transfer Inputs", icon=ICONS["transfer"]):
+                ui.input_numeric("s_download", "Download Size (TB):", 0, min=0, max=1000),
+                ui.input_numeric("s_download_times", "Download Times:", 0, min=0, max=100, step=1),
+                ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
 
     with ui.panel_conditional("input.mode === 'Advanced'"):
 
@@ -164,47 +166,23 @@ with ui.layout_columns(fill=False):
                 amount = amount*1.35
             f"{amount:.2f} {input.currency()}"
 
+ui.input_action_button("show", "Show Cost Breakdown")
 
-with ui.layout_columns(col_widths=[12]):
-    with ui.card(full_screen=True):
-        with ui.card_header(class_="d-flex justify-content-between align-items-center"):
-            "Accumulated Cost"
-            with ui.popover(title="Add a color variable"):
-                ICONS["ellipsis"]
-                ui.input_radio_buttons(
-                    "tip_perc_y",
-                    "Split by:",
-                    ["sex", "smoker", "day", "time"],
-                    selected="day",
-                    inline=True,
-                )
-
-        # @render_plotly
-        # def tip_perc():
-            # from ridgeplot import ridgeplot
-
-            # dat = calculateInfo()
-            # dat["percent"] = dat.tip / dat.total_bill
-            # yvar = input.tip_perc_y()
-            # uvals = dat[yvar].unique()
-
-            # samples = [[dat.percent[dat[yvar] == val]] for val in uvals]
-
-            # plt = ridgeplot(
-            #     samples=samples,
-            #     labels=uvals,
-            #     bandwidth=0.01,
-            #     colorscale="viridis",
-            #     colormode="row-index",
-            # )
-
-            # plt.update_layout(
-            #     legend=dict(
-            #         orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5
-            #     )
-            # )
-
-            # return plt
+with ui.layout_columns(col_widths={"sm": (12, 12), "md": (4,8), "lg": (5,7)}, fill=False, height="300px"):
+    @render_plotly
+    def pie_chart():
+        return pie_chart(calculate_info()["storage_cost"], calculate_info()["download_cost"])
+    
+    @render_plotly
+    def bar_chart_accumulation():
+        storage_cost_distribution = calculate_info()["storage_cost_distribution"]
+        return bar_chart_accumulation(storage_cost_distribution)    
+    
+with ui.layout_columns(col_widths={12}, fill=False, height="300px"):
+    @render_plotly
+    def bar_chart_distribution():
+        storage_cost_distribution = calculate_info()["storage_cost_distribution"]
+        return bar_chart_distribution(storage_cost_distribution)   
 
 ui.include_css(app_dir / "styles.css")
 
@@ -228,33 +206,52 @@ def calculate_info():
 
 
 def calculate_simple(storage, storage_size, sample_count, download_size, download_times, download_count, months):
-    storage_cost = calculate_storage_cost(storage, storage_size*gb_in_tb, months, n_samples=sample_count, requests_per_obj=1)
-    download_cost = calculate_data_transfer_cost(download_size*gb_in_tb, download_count, requests_per_obj=2) * download_times
+    # create a variable to store array of cost breakdown logs so that we can display it in the UI
+    cost_breakdown = []
+
+    # calculate the storage cost
+    storage_cost = calculate_storage_cost(storage, storage_size*gb_in_tb, months, n_samples=sample_count, requests_per_obj=1, cost_breakdown=cost_breakdown)
+    
+    # create a data array for storage cost distribution
+    monthly_storage_cost = storage_cost / months if months > 0 else 0
+    storage_cost_distribution = [{"Month": i, "Cost": monthly_storage_cost,} for i in range(1, months+1)]
+
+    download_cost = calculate_data_transfer_cost(storage, download_size*gb_in_tb, download_count, download_times, requests_per_obj=2, cost_breakdown=cost_breakdown)
     total_cost = storage_cost + download_cost
-    return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': download_cost}
+    cost_breakdown.append(f"Total Cost: ${storage_cost} + ${download_cost} = ${total_cost}")
+    return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': download_cost, 'cost_breakdown': cost_breakdown, "storage_cost_distribution": storage_cost_distribution}
 
 def calculate_advanced(storage, storage_size, sample_count, download_size, download_times, download_count, months):
-    storage_cost = calculate_storage_cost(storage, storage_size*gb_in_tb, months, n_samples=sample_count, requests_per_obj=1)
-    download_cost = calculate_data_transfer_cost(download_size*gb_in_tb, download_count, requests_per_obj=2) * download_times
+    cost_breakdown = []
+    storage_cost_distribution = [{"Month": i, "Cost": 1,} for i in range(1, months+1)]
+
+    storage_cost = calculate_storage_cost(storage, storage_size*gb_in_tb, months, n_samples=sample_count, requests_per_obj=1, cost_breakdown=cost_breakdown)
+    download_cost = calculate_data_transfer_cost(storage, download_size*gb_in_tb, download_count, download_times, requests_per_obj=2, cost_breakdown=cost_breakdown)
     total_cost = storage_cost + download_cost
-    return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': download_cost}
+    cost_breakdown.append(f"Total Cost: ${storage_cost} + ${download_cost} = ${total_cost}")
+    return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': download_cost, 'cost_breakdown': cost_breakdown, "storage_cost_distribution": storage_cost_distribution}
 
 
 
-def calculate_storage_cost(storage, gb, months, n_samples, requests_per_obj=1):
+def calculate_storage_cost(storage, gb, months, n_samples, requests_per_obj=1, cost_breakdown=[]):
     storage_cost_gb = 0.002
     storage_overhead_kb = 8
 
     # Metadata overhead
     metadata_overhead_kb = 32
     metadata_overhead_cost_per_gb = 0.002
+    
+    cost_breakdown.append("Storage Cost Breakdown:")
 
     if storage == "Standard Storage":
         storage_cost_gb = standard_storage_cost_gb
+        cost_breakdown.append(f"Standard Storage Cost: ${storage_cost_gb} per GB/Month")
         storage_overhead_kb = 0
         metadata_overhead_kb = 0
     else:
         storage_cost_gb = deep_archive_storage_cost_gb
+        cost_breakdown.append(f"Deep Archive Storage Cost: ${storage_cost_gb} per GB/Month")
+
 
     overhead_total_gb = (metadata_overhead_kb /kb_in_gb) * n_samples
     metadata_cost_overhead = metadata_overhead_cost_per_gb * overhead_total_gb
@@ -262,36 +259,85 @@ def calculate_storage_cost(storage, gb, months, n_samples, requests_per_obj=1):
     # Storage overhead
     storage_cost_overhead = (storage_overhead_kb / kb_in_gb) * n_samples # this is tiered
 
-    storage_cost = storage_cost_gb * gb
+    put_post_copy_list_1000_request_cost = put_post_copy_list_request_cost * 1000
+    cost_breakdown.append(f"Requests Cost (PUT, POST): ${put_post_copy_list_1000_request_cost} per 1000 requests") 
 
+
+    monthly_cost = storage_cost_gb * gb
+    storage_cost = monthly_cost * months
+    cost_breakdown.append(f"Total Storage Cost: ${storage_cost_gb} x {gb} GB x {months} Month(s)= ${storage_cost}")
+    
     # Cost per request
     requests_cost = requests_per_obj * n_samples * put_post_copy_list_request_cost
 
-    monthly_cost = metadata_cost_overhead + storage_cost_overhead + requests_cost + storage_cost
-    total_cost = monthly_cost * months
+    total_cost = metadata_cost_overhead + storage_cost_overhead + requests_cost + storage_cost
     return total_cost if total_cost and total_cost > 0 else 0
 
-def calculate_data_retrival_cost(gb, n_samples, requests_per_obj=2):
+def calculate_data_retrival_cost(gb, n_samples, times, requests_per_obj=2, cost_breakdown=[]):
+    cost_breakdown.append("Data Retrieval Cost Breakdown:")
+    cost_breakdown.append(f"Data Retrieval Cost: ${deep_archive_retrieval_cost_gb} per GB/Month")
+    cost_breakdown.append(f"GET and all other Requests Cost: ${deep_archive_request_cost} per 1000 requests")
     # Data Retrieval Cost = Data Retrieved (GB) x $0.0200 per GB + $0.0025 per 1,000 requests
     gb_cost = gb * deep_archive_retrieval_cost_gb
+    cost_breakdown.append(f"Data Retrieval Cost: {gb} GB x ${deep_archive_retrieval_cost_gb} = ${gb_cost}")
     requests_cost = n_samples * deep_archive_request_cost
+    cost_breakdown.append(f"Requests Cost (GET, SELECT): {n_samples} files x {deep_archive_request_cost} per request = ${requests_cost}")
     total_cost = gb_cost + requests_cost
+    cost_breakdown.append(f"Total Data Retrieval Cost: ${gb_cost} + ${requests_cost} = ${total_cost}")
     return total_cost if total_cost and total_cost > 0 else 0
 
-def calculate_data_transfer_cost(gb, n_samples, requests_per_obj=2):
+def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj=2, cost_breakdown=[]):
+    retrival_cost = 0
+    total_cost = 0
+    if storage != "Standard Storage":
+        retrival_cost = calculate_data_retrival_cost(gb, n_samples, times, requests_per_obj, cost_breakdown=cost_breakdown)
+
+    cost_breakdown.append("Data Transfer Cost Breakdown:")
+    cost_breakdown.append(f"Data Transfer Out to Internet Cost: ${data_transfer_out_cost} per GB")
+    cost_breakdown.append(f"GET and all other Requests Cost: ${get_select_1000_request_cost} per 1000 requests")
     # Data Transfer OUT to Internet: Cost = Data Transferred (GB) x $0.09 per GB
     # Data Transfer IN from Internet: No charge
     # GET and all other Requests: $0.0004 per 1,000 requests
     requests_cost = requests_per_obj * n_samples * get_select_request_cost
-    transfer_cost = gb * standard_storage_cost_gb
-    total_cost = requests_cost + transfer_cost
+    cost_breakdown.append(f"Requests Cost (GET, SELECT): {n_samples} files x {get_select_request_cost} per request = ${requests_cost}")
+    transfer_cost = gb * data_transfer_out_cost
+    cost_breakdown.append(f"Data Transfer Out Cost: {gb} GB x ${data_transfer_out_cost} = ${transfer_cost}")
+
+    if storage == "Standard Storage":
+        total_cost = (requests_cost + transfer_cost) * times
+        cost_breakdown.append(f"Total Data Transfer Cost: (${requests_cost} + ${transfer_cost}) x {times} Time(s) = ${total_cost}")
+    else:
+        total_cost = (requests_cost + transfer_cost + retrival_cost) * times
+        cost_breakdown.append(f"Total Data Transfer Cost: (${requests_cost} + ${transfer_cost} + ${retrival_cost}) x {times} Time(s) = ${total_cost}")
     return total_cost if total_cost and total_cost > 0 else 0
 
-def accumulate_costs(accumulated_storage):
-    accumulated_storage["Cost USD"].sum()
-    cost_per_year = accumulated_storage.groupby("Year").sum()
-    px.bar(cost_per_year.reset_index(), x="Year", y="Cost USD", title="Cost of storage")
 
+def pie_chart(storage_cost, download_cost):
+    fig = px.pie(
+        values=[storage_cost, download_cost],
+        names=["Storage Cost", "Download Cost"],
+        color_discrete_sequence=["#E567CB", "#6070FA"],
+        title="Cost Distribution",
+    )
+    return fig
+
+def bar_chart_accumulation(data_array):
+    # create new  array to store the accumulated cost
+    data_array_new = data_array.copy()
+
+    for i in range(1, len(data_array_new)):
+        data_array_new[i]["Cost"] += data_array_new[i-1]["Cost"]
+    
+    fig = px.bar(data_array_new, x="Month", y="Cost", title="Accumulated Cost over Month")
+    fig.for_each_trace(lambda trace: trace.update(name = trace.name.replace('Cost','Storage Cost (USD)')))
+    return fig
+
+def bar_chart_distribution(data_array):
+    data_array_copy = data_array.copy()
+    fig = px.bar(data_array_copy, x="Month", y="Cost", title="Storage Cost Distribution by Month")
+    # fig.update_traces(marker_color='#E567CB')
+    fig.for_each_trace(lambda trace: trace.update(name = trace.name.replace('Cost','Storage Cost (USD)')))
+    return fig
 
 @reactive.effect
 @reactive.event(input.reset)
@@ -301,7 +347,30 @@ def _():
     ui.update_numeric("s_download", value=0)
     ui.update_numeric("s_download_times", value=0)
     ui.update_numeric("s_download_samples", value=0)
-    ui.update_slider("a_duration", value=total_months)
+    ui.update_slider("s_duration", value=total_months)
     ui.update_checkbox_group("a_class", selected=storage_class)
     ui.update_select("currency", selected=currency)
     ui.update_radio_buttons("mode", selected=mode)
+
+@reactive.effect
+@reactive.event(input.show)
+def _():
+    m = ui.modal(
+        ui.TagList(print_cost()),
+        title="Cost Breakdown",
+        easy_close=True,
+        footer="GeDaC, 2024",
+    )
+    ui.modal_show(m)
+
+def backup_cost():
+    for i in calculate_info()["cost_breakdown"]:
+        if i.endswith(":"):
+            ui.HTML(f"<p style='font-weight: bold;'><u>{i}</u></p>")
+        else:
+            ui.HTML(f"<p>{i}</p>")
+
+def print_cost():
+    html_strings = [f"<p style='font-weight: bold;'><u>{i}</u></p>" if i.endswith(":") else f"<p>{i}</p>" for i in calculate_info()["cost_breakdown"]]
+    big_string = "".join(html_strings)
+    return ui.HTML(big_string)
