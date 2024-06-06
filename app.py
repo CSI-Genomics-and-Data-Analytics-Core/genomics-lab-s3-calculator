@@ -40,7 +40,7 @@ data_transfer_out_cost = 0.09
 put_post_copy_list_request_cost = 0.000005
 get_select_1000_request_cost = 0.0004
 get_select_request_cost = 0.0000004
-deep_archive_storage_cost_gb = 0.0099
+deep_archive_storage_cost_gb = 0.002
 deep_archive_retrieval_cost_gb = 0.02
 deep_archive_request_cost = 0.0000025
 
@@ -49,16 +49,6 @@ ui.HTML("<em><span>Calculations made based on the pricing information retrieved 
 ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable=True, window_title="GeDaC S3 Cost Study", lang="en")
 
 with ui.sidebar(open="desktop", width=500, fill=True):
-    ui.input_radio_buttons(
-        "s_class",
-        "Storage Class",
-                {
-            "Standard Storage": ui.span("Standard Storage"),
-            "Deep Archive": ui.span("Deep Archive"),
-        },
-        selected=storage_class,
-        inline=True,
-    )
     ui.input_radio_buttons(
         "mode",
         "Calculation Mode",
@@ -69,7 +59,16 @@ with ui.sidebar(open="desktop", width=500, fill=True):
         selected=mode,
         inline=True,
     )
-
+    ui.input_radio_buttons(
+        "s_class",
+        "Storage Class",
+                {
+            "Standard Storage": ui.span("Standard Storage"),
+            "Deep Archive": ui.span("Glacier Deep Archive"),
+        },
+        selected=storage_class,
+        inline=True,
+    )
     # ui.HTML("<hr>")
 
     with ui.panel_conditional("input.mode === 'Simple'"):
