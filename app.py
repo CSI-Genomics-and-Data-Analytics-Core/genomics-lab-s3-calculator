@@ -5,12 +5,15 @@ from scipy.stats import truncnorm
 import pandas as pd
 
 # Load data and compute static values
-from shared import app_dir
+from shared import app_dir, ngs_details
 from shiny import reactive, render
 from shiny.express import input, ui
 from shinywidgets import render_plotly
 import pandas as pd
 from htmltools import TagList, div
+
+
+ngs_df = reactive.value(ngs_details)
 
 # Add main content
 ICONS = {
@@ -19,6 +22,7 @@ ICONS = {
     "currency-dollar": fa.icon_svg("dollar-sign"),
     "ellipsis": fa.icon_svg("ellipsis"),
     "file": fa.icon_svg("folder-open"),
+    "dna": fa.icon_svg("dna"),
     "transfer": fa.icon_svg("right-left"),
 }
 
@@ -49,6 +53,9 @@ ui.HTML("<em><span>Calculations made based on the pricing information retrieved 
 ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable=True, window_title="GeDaC S3 Cost Study", lang="en")
 
 with ui.sidebar(open="desktop", width=500, fill=True):
+
+    ui.input_action_button("sample_info", "Show NGS Size Details", icon=ICONS["dna"])
+
     ui.input_radio_buttons(
         "mode",
         "Calculation Mode",
@@ -59,6 +66,10 @@ with ui.sidebar(open="desktop", width=500, fill=True):
         selected=mode,
         inline=True,
     )
+
+    # add a tooltip
+    ui.HTML("<p style='font-size: 12px;'><em>Simple mode is for quick calculations, while Advanced mode allows for more detailed inputs.</em></p>")
+   
     ui.input_radio_buttons(
         "s_class",
         "Storage Class",
@@ -95,7 +106,7 @@ with ui.sidebar(open="desktop", width=500, fill=True):
                 ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
 
     with ui.panel_conditional("input.mode === 'Advanced'"):
-        ui.input_numeric("a_samples", "No of Samples/Files per Month:", 0, min=1, max=100000),
+        ui.input_numeric("a_samples", "No of Samples per Month:", 0, min=1, max=100000),
         ui.input_numeric("a_size", "Average Sample Size:", 0, min=1, max=1000),
         ui.input_slider(
             "a_duration",
@@ -174,6 +185,7 @@ with ui.layout_columns(col_widths={12}, fill=False, height="300px"):
         return bar_chart_accumulation(storage_cost_distribution)    
 
 ui.include_css(app_dir / "styles.css")
+
 
 # --------------------------------------------------------
 # Reactive calculations and effects
@@ -275,6 +287,7 @@ def calculate_data_retrival_cost(gb, n_samples, times, requests_per_obj=2, cost_
     cost_breakdown.append(f"Total Data Retrieval Cost: ${gb_cost} + ${requests_cost} = ${total_cost}")
     return total_cost if total_cost and total_cost > 0 else 0
 
+
 def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj=2, cost_breakdown=[]):
     retrival_cost = 0
     total_cost = 0
@@ -331,8 +344,6 @@ def bar_chart_accumulation(data_array):
              labels={'Cost':'Storage Cost (USD)', 'Month':'Months'})
     return fig
 
-
-
 @reactive.effect
 @reactive.event(input.reset)
 def _():
@@ -354,6 +365,19 @@ def _():
         title="Cost Breakdown",
         easy_close=True,
         footer="GeDaC, 2024",
+        size="l",
+    )
+    ui.modal_show(m)
+
+@reactive.effect
+@reactive.event(input.sample_info)
+def _():
+    m = ui.modal(
+        ui.TagList(print_table()),
+        title="Sequencing Data Size Summary Across Various Techniques",
+        easy_close=True,
+        footer="GeDaC, 2024",
+        size="xl",
     )
     ui.modal_show(m)
 
@@ -368,3 +392,19 @@ def print_cost():
     html_strings = [f"<p style='font-weight: bold;'><u>{i}</u></p>" if i.endswith(":") else f"<p>{i}</p>" for i in calculate_info()["cost_breakdown"]]
     big_string = "".join(html_strings)
     return ui.HTML(big_string)
+
+def print_table():
+    table = '<table style="border-collapse: collapse; width: 100%;">'
+    table += '<tr style="background-color: #f2f2f2;">'
+    table += '<th style="border: 1px solid black; padding: 8px;">Sequencing Type</th>'
+    table += '<th style="border: 1px solid black; padding: 8px;">Coverage/Read Details</th>'
+    table += '<th style="border: 1px solid black; padding: 8px;">Data Size</th>'
+    table += '</tr>'
+    for index, row in ngs_details.iterrows():
+        table += '<tr>'
+        table += f'<td style="border: 1px solid black; padding: 8px;">{row["Sequencing Type"]}</td>'
+        table += f'<td style="border: 1px solid black; padding: 8px;">{row["Coverage/Read Details"]}</td>'
+        table += f'<td style="border: 1px solid black; padding: 8px;">{row["Data Size"]}</td>'
+        table += '</tr>'
+    table += '</table>'
+    return  ui.HTML(table)
