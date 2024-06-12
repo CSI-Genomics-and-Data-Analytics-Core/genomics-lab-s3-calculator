@@ -13,8 +13,6 @@ import pandas as pd
 from htmltools import TagList, div
 
 
-ngs_df = reactive.value(ngs_details)
-
 # Add main content
 ICONS = {
     "user": fa.icon_svg("user", "regular"),
@@ -23,6 +21,7 @@ ICONS = {
     "ellipsis": fa.icon_svg("ellipsis"),
     "file": fa.icon_svg("folder-open"),
     "dna": fa.icon_svg("dna"),
+    "add": fa.icon_svg("circle-plus"),
     "transfer": fa.icon_svg("right-left"),
 }
 
@@ -31,6 +30,7 @@ mode="Simple"
 currency = "USD"
 storage_class="Standard Storage"
 total_months = 1
+a_duration = [6, 12]
 
 kb_in_gb = 1048576
 gb_in_tb = 1024
@@ -50,10 +50,10 @@ deep_archive_request_cost = 0.0000025
 
 # Add page title and sidebar
 ui.HTML("<em><span>Calculations made based on the pricing information retrieved from AWS (Singapore) as of June 05, 2024.</span></em>")
-ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable=True, window_title="GeDaC S3 Cost Study", lang="en")
+ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable="True", window_title="GeDaC S3 Cost Study", lang="en")
+
 
 with ui.sidebar(open="desktop", width=500, fill=True):
-
     ui.input_action_button("sample_info", "Show NGS Size Details", icon=ICONS["dna"])
 
     ui.input_radio_buttons(
@@ -68,21 +68,22 @@ with ui.sidebar(open="desktop", width=500, fill=True):
     )
 
     # add a tooltip
-    ui.HTML("<p style='font-size: 12px;'><em>Simple mode is for quick calculations, while Advanced mode allows for more detailed inputs.</em></p>")
+    ui.HTML("<p style='font-size: 14px;'><em>Simple mode is for quick calculations, while Advanced mode allows for more detailed inputs.</em></p>")
    
-    ui.input_radio_buttons(
-        "s_class",
-        "Storage Class",
-                {
-            "Standard Storage": ui.span("Standard Storage"),
-            "Deep Archive": ui.span("Glacier Deep Archive"),
-        },
-        selected=storage_class,
-        inline=True,
-    )
     # ui.HTML("<hr>")
 
     with ui.panel_conditional("input.mode === 'Simple'"):
+        ui.input_radio_buttons(
+            "s_class",
+            "Storage Class",
+                    {
+                "Standard Storage": ui.span("Standard Storage"),
+                "Deep Archive": ui.span("Glacier Deep Archive"),
+            },
+            selected=storage_class,
+            inline=True,
+        )
+
         with ui.accordion(id="simple_mode", multiple=True, open=True, ):
             with ui.accordion_panel(f"Storage Inputs", icon=ICONS["file"], style="background-color: #F8F8F8;"):
                 ui.input_numeric("s_samples", "No of Samples/Files:", 0, min=1, max=100000),
@@ -106,19 +107,22 @@ with ui.sidebar(open="desktop", width=500, fill=True):
                 ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
 
     with ui.panel_conditional("input.mode === 'Advanced'"):
-        ui.input_numeric("a_samples", "No of Samples per Month:", 0, min=1, max=100000),
-        ui.input_numeric("a_size", "Average Sample Size:", 0, min=1, max=1000),
+        # ui.input_action_button("add_step", "Add", icon=ICONS["add"], class_="btn-success")
+
+        ui.input_numeric("a_samples", "Number of Samples incoming per Month:", 0, min=1, max=10000),
+        ui.input_numeric("a_sample_avg_size", "Average Sample Size (GB):", 0, min=1, max=10000),
         ui.input_slider(
             "a_duration",
-            "Storage Duration (Months)",
-            0,
+            "Storage Timeline (Months):",
+            min=0,
             max=120,
-            value=total_months,
-            post=" ",
-            animate= False,
+            value=a_duration,
+            post="",
             step=1,
-            drag_range=False,
         )
+        @render.express
+        def tooltip_storage():
+            ui.HTML(f'<p style="font-size: 14px;"><em>* Data incoming till {input.a_duration()[0]} months and stored for totally {input.a_duration()[1]} months. </em></p>')
         ui.HTML("<br/>")
 
     ui.input_action_button("reset", "Reset filter")
@@ -192,18 +196,23 @@ ui.include_css(app_dir / "styles.css")
 # --------------------------------------------------------
 @reactive.calc
 def calculate_info():
-    storage = input.s_class() if input.s_class() else "Standard Storage"
-    storage_size = input.s_size() if input.s_size() else 0
-    sample_count = input.s_samples() if input.s_samples() else 0
-    download_size = input.s_download() if input.s_download() else 0
-    download_times = input.s_download_times() if input.s_download_times() else 0
-    download_count = input.s_download_samples() if input.s_download_samples() else 0
-    months = input.s_duration() if input.s_duration() else 0
-
-    if input.mode() == "Simple":
+    mode = input.mode() if input.mode() else "Simple"
+   
+    if mode == "Simple":
+        storage = input.s_class() if input.s_class() else "Standard Storage"
+        storage_size = input.s_size() if input.s_size() else 0
+        sample_count = input.s_samples() if input.s_samples() else 0
+        download_size = input.s_download() if input.s_download() else 0
+        download_times = input.s_download_times() if input.s_download_times() else 0
+        download_count = input.s_download_samples() if input.s_download_samples() else 0
+        months = input.s_duration() if input.s_duration() else 0
         return calculate_simple(storage, storage_size, sample_count, download_size, download_times, download_count, months)
     else:
-        return calculate_advanced(storage, storage_size, sample_count, download_size, download_times, download_count, months)
+        storage = "Standard Storage"
+        sample_monthly_count = input.a_samples() if input.a_samples() else 0
+        sample_avg_size = input.a_sample_avg_size() if input.a_sample_avg_size() else 0
+        incoming_months, storage_months = input.a_duration() if input.a_duration()[0] else (0,0)
+        return calculate_advanced(storage, sample_monthly_count, sample_avg_size, incoming_months, storage_months)
 
 
 def calculate_simple(storage, storage_size, sample_count, download_size, download_times, download_count, months):
@@ -222,15 +231,29 @@ def calculate_simple(storage, storage_size, sample_count, download_size, downloa
     cost_breakdown.append(f"Total Cost: ${storage_cost} + ${download_cost} = ${total_cost}")
     return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': download_cost, 'cost_breakdown': cost_breakdown, "storage_cost_distribution": storage_cost_distribution}
 
-def calculate_advanced(storage, storage_size, sample_count, download_size, download_times, download_count, months):
+def calculate_advanced(storage, sample_monthly_count, sample_avg_size, incoming_months, storage_months):
     cost_breakdown = []
-    storage_cost_distribution = [{"Month": i, "Cost": 1,} for i in range(1, months+1)]
+    storage_cost_distribution = [{"Month": i, "Cost": 0,} for i in range(1, storage_months+1)]
 
-    storage_cost = calculate_storage_cost(storage, storage_size*gb_in_tb, months, n_samples=sample_count, requests_per_obj=1, cost_breakdown=cost_breakdown)
-    download_cost = calculate_data_transfer_cost(storage, download_size*gb_in_tb, download_count, download_times, requests_per_obj=2, cost_breakdown=cost_breakdown)
-    total_cost = storage_cost + download_cost
-    cost_breakdown.append(f"Total Cost: ${storage_cost} + ${download_cost} = ${total_cost}")
-    return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': download_cost, 'cost_breakdown': cost_breakdown, "storage_cost_distribution": storage_cost_distribution}
+    multiplier = 0
+    # need to caluclate the each month storage cost till incoiming months, accumulate the storage for each month
+    for i in range(incoming_months):
+        multiplier += sample_monthly_count
+        storage_cost = calculate_storage_cost(storage, sample_avg_size*multiplier, 1, n_samples=sample_monthly_count, requests_per_obj=1, cost_breakdown=cost_breakdown)
+        storage_cost_distribution[i]["Cost"] = storage_cost
+    
+    total_storage = sample_avg_size*multiplier
+
+    # calcualte remaining months storage cost
+    for i in range(incoming_months, storage_months):
+        storage_cost = calculate_storage_cost(storage, total_storage, 1, n_samples=sample_monthly_count, requests_per_obj=1, cost_breakdown=cost_breakdown)
+        storage_cost_distribution[i]["Cost"] = storage_cost
+    
+    # calculate the total storage cost
+    storage_cost = sum([i["Cost"] for i in storage_cost_distribution])
+    total_cost = storage_cost 
+    cost_breakdown.append(f"Total Cost: ${storage_cost} = ${total_cost}")
+    return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': 0, 'cost_breakdown': cost_breakdown, "storage_cost_distribution": storage_cost_distribution}
 
 
 
@@ -263,16 +286,16 @@ def calculate_storage_cost(storage, gb, months, n_samples, requests_per_obj=1, c
     put_post_copy_list_1000_request_cost = put_post_copy_list_request_cost * 1000
     cost_breakdown.append(f"Requests Cost (PUT, POST): ${put_post_copy_list_1000_request_cost} per 1000 requests") 
 
-
     monthly_cost = storage_cost_gb * gb
-    storage_cost = monthly_cost * months
+    storage_cost = round(monthly_cost * months,2)
     cost_breakdown.append(f"Total Storage Cost: ${storage_cost_gb} x {gb} GB x {months} Month(s)= ${storage_cost}")
     
     # Cost per request
     requests_cost = requests_per_obj * n_samples * put_post_copy_list_request_cost
 
     total_cost = metadata_cost_overhead + storage_cost_overhead + requests_cost + storage_cost
-    return total_cost if total_cost and total_cost > 0 else 0
+    
+    return round(total_cost,2) if total_cost and total_cost > 0 else 0
 
 def calculate_data_retrival_cost(gb, n_samples, times, requests_per_obj=2, cost_breakdown=[]):
     cost_breakdown.append("Data Retrieval Cost Breakdown:")
@@ -281,11 +304,11 @@ def calculate_data_retrival_cost(gb, n_samples, times, requests_per_obj=2, cost_
     # Data Retrieval Cost = Data Retrieved (GB) x $0.0200 per GB + $0.0025 per 1,000 requests
     gb_cost = gb * deep_archive_retrieval_cost_gb
     cost_breakdown.append(f"Data Retrieval Cost: {gb} GB x ${deep_archive_retrieval_cost_gb} = ${gb_cost}")
-    requests_cost = n_samples * deep_archive_request_cost
+    requests_cost = round(n_samples * deep_archive_request_cost,2)
     cost_breakdown.append(f"Requests Cost (GET, SELECT): {n_samples} files x {deep_archive_request_cost} per request = ${requests_cost}")
     total_cost = gb_cost + requests_cost
     cost_breakdown.append(f"Total Data Retrieval Cost: ${gb_cost} + ${requests_cost} = ${total_cost}")
-    return total_cost if total_cost and total_cost > 0 else 0
+    return round(total_cost,2) if total_cost and total_cost > 0 else 0
 
 
 def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj=2, cost_breakdown=[]):
@@ -302,7 +325,7 @@ def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj
     # GET and all other Requests: $0.0004 per 1,000 requests
     requests_cost = requests_per_obj * n_samples * get_select_request_cost
     cost_breakdown.append(f"Requests Cost (GET, SELECT): {n_samples} files x {get_select_request_cost} per request = ${requests_cost}")
-    transfer_cost = gb * data_transfer_out_cost
+    transfer_cost = round(gb * data_transfer_out_cost,2)
     cost_breakdown.append(f"Data Transfer Out Cost: {gb} GB x ${data_transfer_out_cost} = ${transfer_cost}")
 
     if storage == "Standard Storage":
@@ -311,7 +334,7 @@ def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj
     else:
         total_cost = (requests_cost + transfer_cost + retrival_cost) * times
         cost_breakdown.append(f"Total Data Transfer Cost: (${requests_cost} + ${transfer_cost} + ${retrival_cost}) x {times} Time(s) = ${total_cost}")
-    return total_cost if total_cost and total_cost > 0 else 0
+    return round(total_cost,2) if total_cost and total_cost > 0 else 0
 
 def pie_chart(storage_cost, download_cost):
     fig = px.pie(
