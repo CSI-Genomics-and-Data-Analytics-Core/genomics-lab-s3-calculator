@@ -2,3 +2,7 @@ site
 __pycache__
 *.pyc
 *.pyo
+
+# Misc
+.DS_Store
+.env

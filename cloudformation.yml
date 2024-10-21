@@ -13,24 +13,50 @@ Parameters:
     Type: String
 
 Resources:
-  S3WebsiteBucket:
+  S3WebsiteBucketWWW:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub '${DomainName}'
+      BucketName: !Sub 'www.${DomainName}'
       PublicAccessBlockConfiguration:
-           BlockPublicAcls: false
-           BlockPublicPolicy: false
-           IgnorePublicAcls: false
-           RestrictPublicBuckets: false
-      OwnershipControls:
-           Rules:
-                - ObjectOwnership: ObjectWriter
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
       OwnershipControls:
         Rules:
           - ObjectOwnership: ObjectWriter
       WebsiteConfiguration:
         IndexDocument: index.html
-        ErrorDocument: error.html
+        ErrorDocument: index.html
+
+  S3WebsiteBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub '${DomainName}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      WebsiteConfiguration:
+        RedirectAllRequestsTo:
+          HostName: !Sub 'www.${DomainName}'
+          Protocol: https
+
+  S3BucketPolicyWWW:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref S3WebsiteBucketWWW
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub 'arn:aws:s3:::www.${DomainName}/*'
 
   S3BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
@@ -42,23 +68,25 @@ Resources:
           - Effect: Allow
             Principal: '*'
             Action: 's3:GetObject'
-            Resource: !Sub 'arn:aws:s3:::${S3WebsiteBucket}/*'
+            Resource: !Sub 'arn:aws:s3:::${DomainName}/*'
 
   CloudFrontDistributionWWW:
     Type: 'AWS::CloudFront::Distribution'
     Properties:
       DistributionConfig:
         Origins:
-          - DomainName: !GetAtt S3WebsiteBucket.RegionalDomainName
-            Id: S3Origin
-            S3OriginConfig:
-              OriginAccessIdentity: ''
+          - DomainName: !Sub 'www.${DomainName}.s3-website-${AWS::Region}.amazonaws.com'
+            Id: S3OriginWWW
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
         Enabled: true
         DefaultRootObject: index.html
         DefaultCacheBehavior:
           AllowedMethods: ['GET', 'HEAD']
           CachedMethods: ['GET', 'HEAD']
-          TargetOriginId: S3Origin
+          TargetOriginId: S3OriginWWW
           ViewerProtocolPolicy: redirect-to-https
           ForwardedValues:
             QueryString: false
@@ -73,7 +101,7 @@ Resources:
     Type: 'AWS::Route53::RecordSet'
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
+      Name: !Sub 'www.${DomainName}'
       Type: A
       AliasTarget:
         DNSName: !GetAtt CloudFrontDistributionWWW.DomainName
@@ -84,16 +112,18 @@ Resources:
     Properties:
       DistributionConfig:
         Origins:
-          - DomainName: !GetAtt S3WebsiteBucket.RegionalDomainName
-            Id: S3Origin
-            S3OriginConfig:
-              OriginAccessIdentity: ''
+          - DomainName: !Sub '${DomainName}.s3-website-${AWS::Region}.amazonaws.com'
+            Id: S3OriginNonWWW
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
         Enabled: true
         DefaultRootObject: index.html
         DefaultCacheBehavior:
           AllowedMethods: ['GET', 'HEAD']
           CachedMethods: ['GET', 'HEAD']
-          TargetOriginId: S3Origin
+          TargetOriginId: S3OriginNonWWW
           ViewerProtocolPolicy: redirect-to-https
           ForwardedValues:
             QueryString: false
@@ -108,7 +138,7 @@ Resources:
     Type: 'AWS::Route53::RecordSet'
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: !Sub 'www.${DomainName}'
+      Name: !Sub '${DomainName}'
       Type: A
       AliasTarget:
         DNSName: !GetAtt CloudFrontDistributionNonWWW.DomainName
