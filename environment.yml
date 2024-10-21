@@ -3,16 +3,16 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - shiny=0.10.2
+  - shiny=1.1.0
   - python=3.11.0
-  - plotly=5.22.0
+  - plotly=5.24.1
   - pandas=2.2.2
-  - pip=24.0
-  - numpy=1.26.4
-  - scipy=1.13.0
+  - pip=24.2
+  - numpy=2.1.2
+  - scipy=1.14.1
   - pip: 
     - faicons==0.2.2
-    - shinylive==0.4.1
-    - shinywidgets==0.3.2
-    - ridgeplot==0.1.25
+    - shinylive==0.6.0
+    - shinywidgets==0.3.3
+    - ridgeplot==0.1.30
 

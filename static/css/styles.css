@@ -12,7 +12,7 @@
 }
 
 
-.bslib-page-title::before {
+#page-title::before {
   display: inline-block; /* Ensures the icon is treated as an inline element */
   margin-right: 10px; /* Adjust spacing as needed */
   vertical-align: middle; /* Align the icon vertically with the text */

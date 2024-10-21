@@ -48,147 +48,155 @@ deep_archive_storage_cost_gb = 0.002
 deep_archive_retrieval_cost_gb = 0.02
 deep_archive_request_cost = 0.0000025
 
+css_file = app_dir / "static" / "css" / "styles.css"
+
 # Add page title and sidebar
-ui.HTML("<em><span>Calculations made based on the pricing information retrieved from AWS (Singapore) as of June 05, 2024.</span></em>")
-ui.page_opts(title=ui.HTML("<span style='font-size: 40px;'> S3 Cost Study for Labs<span>"), fillable="True", window_title="GeDaC S3 Cost Study", lang="en")
+ui.page_opts(title=ui.HTML("<div style='text-align: center; font-size: 30px; padding-right: 10px' id='page-title'>NGS Cost Study</div>"), fillable="True", full_width=True, window_title="GeDaC Cost Study", lang="en")
 
+with ui.nav_panel(ui.HTML("<span style='font-size: 20px;'> S3 Cost Estimator<span>")):
+    ui.HTML("<em><span>Calculations made based on the pricing information retrieved from AWS (Singapore) as of June 05, 2024.</span></em>")
+    with ui.layout_sidebar():
+        with ui.sidebar(open="desktop", width=500, fill=True):
+            ui.input_action_button("sample_info", "Show NGS Size Details", icon=ICONS["dna"])
 
-with ui.sidebar(open="desktop", width=500, fill=True):
-    ui.input_action_button("sample_info", "Show NGS Size Details", icon=ICONS["dna"])
+            ui.input_radio_buttons(
+                "mode",
+                "Calculation Mode",
+                        {
+                    "Simple": ui.span("Simple", style="color: #00AA00;"),
+                    "Advanced": ui.span("Advanced", style="color: #FF0000;"),
+                },
+                selected=mode,
+                inline=True,
+            )
 
-    ui.input_radio_buttons(
-        "mode",
-        "Calculation Mode",
-                {
-            "Simple": ui.span("Simple", style="color: #00AA00;"),
-            "Advanced": ui.span("Advanced", style="color: #FF0000;"),
-        },
-        selected=mode,
-        inline=True,
-    )
+            # add a tooltip
+            ui.HTML("<p style='font-size: 14px;'><em>Simple mode is for quick calculations, while Advanced mode allows for more detailed inputs.</em></p>")
+        
+            # ui.HTML("<hr>")
 
-    # add a tooltip
-    ui.HTML("<p style='font-size: 14px;'><em>Simple mode is for quick calculations, while Advanced mode allows for more detailed inputs.</em></p>")
-   
-    # ui.HTML("<hr>")
-
-    with ui.panel_conditional("input.mode === 'Simple'"):
-        ui.input_radio_buttons(
-            "s_class",
-            "Storage Class",
-                    {
-                "Standard Storage": ui.span("Standard Storage"),
-                "Deep Archive": ui.span("Glacier Deep Archive"),
-            },
-            selected=storage_class,
-            inline=True,
-        )
-
-        with ui.accordion(id="simple_mode", multiple=True, open=True, ):
-            with ui.accordion_panel(f"Storage Inputs", icon=ICONS["file"], style="background-color: #F8F8F8;"):
-                ui.input_numeric("s_samples", "No of Samples/Files:", 0, min=1, max=100000),
-                ui.input_numeric("s_size", "Total Storage Size (TB):", 0, min=1, max=1000),
-                ui.input_slider(
-                    "s_duration",
-                    "Storage Duration (Months)",
-                    0,
-                    max=120,
-                    value=total_months,
-                    post=" ",
-                    animate= False,
-                    step=1,
-                    drag_range=False,
+            with ui.panel_conditional("input.mode === 'Simple'"):
+                ui.input_radio_buttons(
+                    "s_class",
+                    "Storage Class",
+                            {
+                        "Standard Storage": ui.span("Standard Storage"),
+                        "Deep Archive": ui.span("Glacier Deep Archive"),
+                    },
+                    selected=storage_class,
+                    inline=True,
                 )
+
+                with ui.accordion(id="simple_mode", multiple=True, open=True, ):
+                    with ui.accordion_panel(f"Storage Inputs", icon=ICONS["file"], style="background-color: #F8F8F8;"):
+                        ui.input_numeric("s_samples", "No of Samples/Files:", 0, min=1, max=100000),
+                        ui.input_numeric("s_size", "Total Storage Size (TB):", 0, min=1, max=1000),
+                        ui.input_slider(
+                            "s_duration",
+                            "Storage Duration (Months)",
+                            0,
+                            max=120,
+                            value=total_months,
+                            post=" ",
+                            animate= False,
+                            step=1,
+                            drag_range=False,
+                        )
+                        ui.HTML("<br/>")
+
+                    with ui.accordion_panel(f"Data-Transfer Inputs", icon=ICONS["transfer"], style="background-color: #F8F8F8;"):
+                        ui.input_numeric("s_download", "Download Size (TB):", 0, min=0, max=1000),
+                        ui.input_numeric("s_download_times", "Download Times:", 0, min=0, max=100, step=1),
+                        ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
+
+            with ui.panel_conditional("input.mode === 'Advanced'"):
+                # ui.input_action_button("add_step", "Add", icon=ICONS["add"], class_="btn-success")
+
+                ui.input_numeric("a_samples", "Number of Samples incoming per Month:", 0, min=1, max=10000),
+                ui.input_numeric("a_sample_avg_size", "Average Sample Size (GB):", 0, min=1, max=10000),
+                ui.input_slider(
+                    "a_duration",
+                    "Storage Timeline (Months):",
+                    min=0,
+                    max=120,
+                    value=a_duration,
+                    post="",
+                    step=1,
+                )
+                @render.express
+                def tooltip_storage():
+                    ui.HTML(f'<p style="font-size: 14px;"><em>* Data incoming till {input.a_duration()[0]} months and stored for totally {input.a_duration()[1]} months. </em></p>')
                 ui.HTML("<br/>")
 
-            with ui.accordion_panel(f"Data-Transfer Inputs", icon=ICONS["transfer"], style="background-color: #F8F8F8;"):
-                ui.input_numeric("s_download", "Download Size (TB):", 0, min=0, max=1000),
-                ui.input_numeric("s_download_times", "Download Times:", 0, min=0, max=100, step=1),
-                ui.input_numeric("s_download_samples", "No of Downloading Samples/Files:", 0, min=1, max=100000),
+            ui.input_action_button("reset", "Reset filter")
+        ui.include_css(css_file)
 
-    with ui.panel_conditional("input.mode === 'Advanced'"):
-        # ui.input_action_button("add_step", "Add", icon=ICONS["add"], class_="btn-success")
 
-        ui.input_numeric("a_samples", "Number of Samples incoming per Month:", 0, min=1, max=10000),
-        ui.input_numeric("a_sample_avg_size", "Average Sample Size (GB):", 0, min=1, max=10000),
-        ui.input_slider(
-            "a_duration",
-            "Storage Timeline (Months):",
-            min=0,
-            max=120,
-            value=a_duration,
-            post="",
-            step=1,
-        )
-        @render.express
-        def tooltip_storage():
-            ui.HTML(f'<p style="font-size: 14px;"><em>* Data incoming till {input.a_duration()[0]} months and stored for totally {input.a_duration()[1]} months. </em></p>')
-        ui.HTML("<br/>")
+        with ui.layout_columns(fill=False):
+            ui.input_select(
+                    "currency",
+                    "Currency:",
+                    choices={
+                        "USD" :"US Dollar",
+                        "SGD" : "Singapore Dollar",
+                    },
+                    selected=currency,
+                )
 
-    ui.input_action_button("reset", "Reset filter")
+        with ui.layout_columns(fill=False):
+            with ui.value_box(showcase=ICONS["currency-dollar"]):
+                ui.HTML("<strong>Total Cost</strong>")
 
-with ui.layout_columns(fill=False):
-   ui.input_select(
-        "currency",
-        "Currency:",
-        choices={
-            "USD" :"US Dollar",
-            "SGD" : "Singapore Dollar",
-        },
-        selected=currency,
-    )
+                @render.express
+                def total_amount():
+                    amount=calculate_info()["total_cost"]
+                    if input.currency() == "SGD":
+                        amount = amount*1.35
+                    f"{amount:.2f} {input.currency()}"
 
-with ui.layout_columns(fill=False):
-    with ui.value_box(showcase=ICONS["currency-dollar"]):
-        ui.HTML("<strong>Total Cost</strong>")
+            with ui.value_box(showcase=ICONS["file"]):
+                ui.HTML("<strong>Storage Cost</strong>")
 
-        @render.express
-        def total_amount():
-            amount=calculate_info()["total_cost"]
-            if input.currency() == "SGD":
-                amount = amount*1.35
-            f"{amount:.2f} {input.currency()}"
+                @render.express
+                def total_storage():
+                    amount=calculate_info()["storage_cost"]
+                    if input.currency() == "SGD":
+                        amount = amount*1.35
+                    f"{amount:.2f} {input.currency()}"
 
-    with ui.value_box(showcase=ICONS["file"]):
-        ui.HTML("<strong>Storage Cost</strong>")
+            with ui.value_box(showcase=ICONS["transfer"]):
+                ui.HTML("<strong>Data-Transfer Cost</strong>")
 
-        @render.express
-        def total_storage():
-            amount=calculate_info()["storage_cost"]
-            if input.currency() == "SGD":
-                amount = amount*1.35
-            f"{amount:.2f} {input.currency()}"
+                @render.express
+                def total_download():
+                    amount=calculate_info()["download_cost"]
+                    if input.currency() == "SGD":
+                        amount = amount*1.35
+                    f"{amount:.2f} {input.currency()}"
 
-    with ui.value_box(showcase=ICONS["transfer"]):
-        ui.HTML("<strong>Data-Transfer Cost</strong>")
+        ui.input_action_button("show", "Show Cost Breakdown")
 
-        @render.express
-        def total_download():
-            amount=calculate_info()["download_cost"]
-            if input.currency() == "SGD":
-                amount = amount*1.35
-            f"{amount:.2f} {input.currency()}"
+        with ui.layout_columns(col_widths={"sm": (12, 12), "md": (4,8), "lg": (5,7)}, fill=False, height="300px"):
+            @render_plotly
+            def pie_chart():
+                return pie_chart(calculate_info()["storage_cost"], calculate_info()["download_cost"])
+            
+            @render_plotly
+            def bar_chart_distribution():
+                storage_cost_distribution = calculate_info()["storage_cost_distribution"]
+                return bar_chart_distribution(storage_cost_distribution)   
+            
+            
+        with ui.layout_columns(col_widths={12}, fill=False, height="300px"):
+            @render_plotly
+            def bar_chart_accumulation():
+                storage_cost_distribution = calculate_info()["storage_cost_distribution"]
+                return bar_chart_accumulation(storage_cost_distribution)    
 
-ui.input_action_button("show", "Show Cost Breakdown")
 
-with ui.layout_columns(col_widths={"sm": (12, 12), "md": (4,8), "lg": (5,7)}, fill=False, height="300px"):
-    @render_plotly
-    def pie_chart():
-        return pie_chart(calculate_info()["storage_cost"], calculate_info()["download_cost"])
-    
-    @render_plotly
-    def bar_chart_distribution():
-        storage_cost_distribution = calculate_info()["storage_cost_distribution"]
-        return bar_chart_distribution(storage_cost_distribution)   
-    
-    
-with ui.layout_columns(col_widths={12}, fill=False, height="300px"):
-    @render_plotly
-    def bar_chart_accumulation():
-        storage_cost_distribution = calculate_info()["storage_cost_distribution"]
-        return bar_chart_accumulation(storage_cost_distribution)    
-
-ui.include_css(app_dir / "styles.css")
+with ui.nav_panel(ui.HTML("<span style='font-size: 20px;'> Compute Cost Estimator<span>")):
+    "To be implemented"
+ui.nav_spacer()
 
 
 # --------------------------------------------------------
@@ -213,7 +221,6 @@ def calculate_info():
         sample_avg_size = input.a_sample_avg_size() if input.a_sample_avg_size() else 0
         incoming_months, storage_months = input.a_duration() if input.a_duration()[0] else (0,0)
         return calculate_advanced(storage, sample_monthly_count, sample_avg_size, incoming_months, storage_months)
-
 
 def calculate_simple(storage, storage_size, sample_count, download_size, download_times, download_count, months):
     # create a variable to store array of cost breakdown logs so that we can display it in the UI
@@ -254,8 +261,6 @@ def calculate_advanced(storage, sample_monthly_count, sample_avg_size, incoming_
     total_cost = storage_cost 
     cost_breakdown.append(f"Total Cost: ${storage_cost} = ${total_cost}")
     return {'total_cost': total_cost, 'storage_cost': storage_cost, 'download_cost': 0, 'cost_breakdown': cost_breakdown, "storage_cost_distribution": storage_cost_distribution}
-
-
 
 def calculate_storage_cost(storage, gb, months, n_samples, requests_per_obj=1, cost_breakdown=[]):
     storage_cost_gb = 0.002
@@ -309,7 +314,6 @@ def calculate_data_retrival_cost(gb, n_samples, times, requests_per_obj=2, cost_
     total_cost = gb_cost + requests_cost
     cost_breakdown.append(f"Total Data Retrieval Cost: ${gb_cost} + ${requests_cost} = ${total_cost}")
     return round(total_cost,2) if total_cost and total_cost > 0 else 0
-
 
 def calculate_data_transfer_cost(storage, gb, n_samples, times, requests_per_obj=2, cost_breakdown=[]):
     retrival_cost = 0
